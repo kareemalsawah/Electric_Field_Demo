@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Physics Simulation</title>
+</head>
+<body>
+<canvas id = "canvas" width="1300" height="800"></canvas>
+<div id="inputsDiv">
+
+<div id="properties">
+<div class="propertiesDiv">
+<h3>Charge:</h3><input value="3" type="number" id="chargeInput"/><h3>x10</h3><input value="0" type="number" id="powerInput"/>
+</div>
+<div class="propertiesDiv">
+<h3>Mass:</h3><input value="1" type="number" id="massInput"/>
+</div>
+</div>
+
+<div class="propertiesDiv">
+<h3>Fixed:</h3><input checked="false" type="checkbox" id="fixedInput"/>
+</div>
+<div class="propertiesDiv">
+<h3>Draw Electric Field:</h3><input checked="false" type="checkbox" id="drawElectricField"/>
+</div>
+<div class="propertiesDiv">
+<h3>Radius drawn:</h3><input value="10" type="number" id="radiusInput"/>
+</div>
+
+</div>
+</body>
+<script>
+function resizeCanvasToDisplaySize(canv) {
+   // look up the size the canv is being displayed
+   var width = canv.clientWidth;
+   var height = canv.clientHeight;
+   // If it's resolution does not match change it
+   if (canv.width !== width || canv.height !== height) {
+     canv.width = width;
+     canv.height = height;
+     return true;
+   }
+
+   return false;
+}
+
+function resize(){
+resizeCanvasToDisplaySize(document.getElementById("canvas"));
+}
+
+setTimeout(resize,100);
+var canvas = document.getElementById("canvas");
+var ctx = canvas.getContext("2d");
+
+var timePerFrame = 20;
+var timeBetweenAdds = 10;
+var damping = 0.996;
+var collisionDamping = 0.8;
+var charges = [];
+var negativeColor = "red";
+var positiveColor = "blue";
+var k = 9000000000;
+k = 1;
+intialize();
+function intialize(){
+	simulationLoop();
+}
+
+function simulationLoop(){
+	drawBackground();
+	for(var i = 0; i < charges.length; i++){
+		charges[i].updateForces(charges);
+		charges[i].explicitEuler(timePerFrame/100);
+		charges[i].draw();
+	}
+	if(timeBetweenAdds>0){
+		timeBetweenAdds--;
+	}
+	if(document.getElementById("drawElectricField").checked){
+		drawElectricField();
+		timePerFrame = 20;
+		damping = 0.996;
+	}else{
+		timePerFrame = 5;
+		damping = 0.999;
+	}
+	setTimeout(simulationLoop,timePerFrame);
+}
+
+function drawBackground(){
+	ctx.beginPath();
+	ctx.rect(0,0,canvas.width,canvas.height);
+	ctx.fillStyle = "black";
+	ctx.fill();
+	ctx.beginPath();
+	ctx.rect(5,5,canvas.width-10,canvas.height-10);
+	ctx.fillStyle = "white";
+	ctx.fill();
+}
+
+function charge(charge,position,velocity,mass,fixed,radius,index){
+	this.charge = charge;
+	this.position = position;
+	this.fixed = fixed;
+	this.velocity = velocity;
+	this.mass = mass;
+	this.force = [0,0];
+	this.radius = radius;
+	this.index = index;
+	this.color;
+	if(this.charge<0){
+		this.color = negativeColor;
+	}
+	if(this.charge>0){
+		this.color = positiveColor;
+	}
+	this.explicitEuler = function(dt){
+		if(!this.fixed){
+			this.position[0] = this.position[0] + dt*this.velocity[0];
+			this.position[1] = this.position[1] + dt*this.velocity[1];
+			this.velocity[0] = this.velocity[0] + dt*this.force[0]/this.mass;
+			this.velocity[1] = this.velocity[1] + dt*this.force[1]/this.mass;
+			if(this.position[0]<0&&this.velocity[0]<0){
+				this.velocity[0] *= -collisionDamping;
+			}
+			if(this.position[0]>canvas.width&&this.velocity[0]>0){
+				this.velocity[0] *= -collisionDamping;
+			}
+			if(this.position[1]<0&&this.velocity[1]<0){
+				this.velocity[1] *= -collisionDamping;
+			}
+			if(this.position[1]>canvas.height&&this.velocity[1]>0){
+				this.velocity[1] *= -collisionDamping;
+			}
+			/*if(this.velocity[0]>0){
+				this.velocity[0] -= damping*this.velocity[0];
+			}
+			if(this.velocity[0]<0){
+				this.velocity[0] += damping*this.velocity[0];
+			}
+			if(this.velocity[1]>0){
+				this.velocity[1] -= damping*this.velocity[1];
+			}
+			if(this.velocity[1]<0){
+				this.velocity[1] += damping*this.velocity[1];
+			}*/
+			this.velocity[0] *= damping;
+			this.velocity[1] *= damping;
+		}
+	}
+
+	this.draw = function(){
+		ctx.beginPath();
+		ctx.ellipse(this.position[0],this.position[1],this.radius,this.radius,2*Math.PI,0,2*Math.PI);
+	    ctx.fillStyle = this.color;
+	    ctx.fill();
+	}
+
+	this.updateForces = function(chargesArr){
+		this.force = [0,0];
+		for(var i = 0; i < chargesArr.length; i++){
+			if(i!=this.index){
+				var charge2pos = chargesArr[i].position;
+				var charge2Charge = chargesArr[i].charge;
+				var netForce = calculateForces(this.position[0],this.position[1],this.charge,charge2pos[0],charge2pos[1],charge2Charge);
+				this.force[0] -= netForce[0];
+				this.force[1] -= netForce[1];
+			}
+		}
+	}
+}
+
+function calculateForces(charge1x,charge1y,q1,charge2x,charge2y,q2){
+	var distX = Math.abs(charge1x-charge2x);
+	var distY = Math.abs(charge1y-charge2y);
+	var distTotal = (Math.sqrt(distX*distX+distY*distY));
+	var forceTotal = (k*q1*q2)/distTotal*distTotal;
+	var forceX = charge2x-charge1x;
+	var forceY = charge2y-charge1y;
+	forceX /= distTotal;
+	forceY /= distTotal;
+	forceX *= forceTotal;
+	forceY *= forceTotal;
+	if(distX<1&&distY<1){
+		return[0,0];
+	}
+	return [forceX,forceY];
+}
+
+
+
+function drawElectricField(){
+	for(var i = 10; i < canvas.width; i += 20){
+		for(var j = 10; j < canvas.height; j+= 20){
+			var totalElectricField = [0,0];
+			for(var x = 0; x < charges.length; x++){
+				var resultFromOneCharge = calculateForces(i,j,1,charges[x].position[0],charges[x].position[1],charges[x].charge);
+				totalElectricField[0] += resultFromOneCharge[0];
+				totalElectricField[1] += resultFromOneCharge[1];
+			}
+			totalElectricField[0] *= 10;
+			totalElectricField[1] *= 10;
+			drawArrowhead(ctx,[i,j],[i-totalElectricField[0],j-totalElectricField[1]],(totalElectricField[0]*totalElectricField[0]+totalElectricField[1]*totalElectricField[1])/200);
+
+		}
+	}
+}
+
+function drawArrowhead(context, from, to, radius) {
+	var x_center = to[0];
+	var y_center = to[1];
+	if(radius>5){
+		radius = 5;
+	}
+	var angle;
+	var x;
+	var y;
+	ctx.fillStyle = 'black';
+	ctx.beginPath();
+	ctx.moveTo(from[0],from[1]);
+	ctx.lineTo(to[0],to[1]);
+	ctx.stroke();
+
+	context.beginPath();
+
+	angle = Math.atan2(to[1] - from[1], to[0] - from[0])
+	x = radius * Math.cos(angle) + x_center;
+	y = radius * Math.sin(angle) + y_center;
+
+	context.moveTo(x, y);
+
+	angle += (1.0/3.0) * (2 * Math.PI)
+	x = radius * Math.cos(angle) + x_center;
+	y = radius * Math.sin(angle) + y_center;
+
+	context.lineTo(x, y);
+
+	angle += (1.0/3.0) * (2 * Math.PI)
+	x = radius *Math.cos(angle) + x_center;
+	y = radius *Math.sin(angle) + y_center;
+
+	context.lineTo(x, y);
+
+	context.closePath();
+
+	context.fill();
+}
+canvas.addEventListener("mousedown", function (e) {
+	findxy('down', e)
+}, false);
+
+function findxy(res, e) {
+	var currX = e.clientX - canvas.offsetLeft;
+	var currY = e.clientY - canvas.offsetTop;
+	addPoint(currX,currY);
+}
+
+function addPoint(x,y){
+	var chargeToAdd = document.getElementById("chargeInput").value*Math.pow(10,document.getElementById("powerInput").value);
+	var positionToAdd = [x,y];
+	var massToAdd = document.getElementById("massInput").value;
+	var radiusToAdd = document.getElementById("radiusInput").value;
+	var fixedToAdd = document.getElementById("fixedInput").checked;
+	var indexToAdd = charges.length;
+	if(timeBetweenAdds==0){
+		charges.push(new charge(chargeToAdd,positionToAdd,[0,0],massToAdd,fixedToAdd,radiusToAdd,indexToAdd));
+		console.log(charges[indexToAdd]);
+	}
+}
+</script>
+<style>
+body{
+  background-color:#eee;
+}
+#properties{
+	overflow:hidden;
+}
+
+#canvas{
+  height:80vh;
+  width:90vw;
+}
+.propertiesDiv{
+	float:left;
+	margin-left:50px;
+	overflow:hidden;
+}
+h3{
+	float:left;
+}
+input{
+	float:left;
+	margin-top:20px;
+}
+#power{
+	margin-top:10px;
+}
+#fixedInput{
+	margin-top:25px;
+}
+#inputsDiv{
+  background-color:#fff;
+  border-radius:20px;
+  border: 2px solid black;
+  padding-bottom:50px;
+}
+</style>
+</html>
